@@ -13,13 +13,13 @@
 
     <fragment
         android:id="@+id/navigation_drawing"
-        android:name="ua.kpi.comsys.io8225.labworks.ui.dashboard.DrawingFragment"
+        android:name="ua.kpi.comsys.io8225.labworks.ui.drawing.DrawingFragment"
         android:label="@string/title_drawing"
         tools:layout="@layout/fragment_drawing" />
 
     <fragment
-        android:id="@+id/navigation_notifications"
-        android:name="ua.kpi.comsys.io8225.labworks.ui.notifications.NotificationsFragment"
-        android:label="@string/title_notifications"
-        tools:layout="@layout/fragment_notifications" />
+        android:id="@+id/navigation_books_list"
+        android:name="ua.kpi.comsys.io8225.labworks.ui.books_list.BooksListFragment"
+        android:label="@string/title_books_list"
+        tools:layout="@layout/fragment_bookslist" />
 </navigation>
