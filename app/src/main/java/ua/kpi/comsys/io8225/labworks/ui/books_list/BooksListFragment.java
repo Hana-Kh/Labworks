@@ -7,18 +7,27 @@ import android.graphics.Color;
 import android.os.Bundle;
 import android.text.TextUtils;
 import android.util.DisplayMetrics;
+import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.Button;
+import android.widget.EditText;
+import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.PopupWindow;
+import android.widget.SearchView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.RawRes;
 import androidx.constraintlayout.widget.ConstraintLayout;
 import androidx.constraintlayout.widget.ConstraintSet;
 import androidx.fragment.app.Fragment;
+
+import com.daimajia.swipe.SwipeLayout;
 
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
@@ -30,6 +39,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
+import java.util.HashMap;
 
 import ua.kpi.comsys.io8225.labworks.R;
 
@@ -57,6 +67,100 @@ public class BooksListFragment extends Fragment {
         } catch (ParseException e) {
             e.printStackTrace();
         }
+
+        SearchView searchView = root.findViewById(R.id.search_view);
+
+        searchView.setOnQueryTextListener(new SearchView.OnQueryTextListener() {
+            @Override
+            public boolean onQueryTextSubmit(String query) {
+                int countResults = 0;
+                for (ConstraintLayout book :
+                        arrConstraint) {
+                    if (query == null){
+                        ((SwipeLayout) book.getParent()).setVisibility(View.VISIBLE);
+                        countResults++;
+                    }
+                    else {
+                        if (arrBook.get(arrConstraint.indexOf(book)).bookTitle.toLowerCase()
+                                .contains(query.toLowerCase()) || query.length() == 0){
+                            ((SwipeLayout) book.getParent()).setVisibility(View.VISIBLE);
+                            countResults++;
+                        }
+                        else
+                            ((SwipeLayout) book.getParent()).setVisibility(View.GONE);
+                    }
+                }
+
+                if (countResults == 0){
+                    root.findViewById(R.id.no_books_view).setVisibility(View.VISIBLE);
+                }
+                else {
+                    root.findViewById(R.id.no_books_view).setVisibility(View.GONE);
+                }
+                return false;
+            }
+
+            @Override
+            public boolean onQueryTextChange(String query) {
+                int countResults = 0;
+                for (ConstraintLayout book :
+                        arrConstraint) {
+                    if (query == null){
+                        ((SwipeLayout) book.getParent()).setVisibility(View.VISIBLE);
+                        countResults++;
+                    }
+                    else {
+                        if (arrBook.get(arrConstraint.indexOf(book)).bookTitle.toLowerCase()
+                                .contains(query.toLowerCase()) || query.length() == 0){
+                            ((SwipeLayout) book.getParent()).setVisibility(View.VISIBLE);
+                            countResults++;
+                        }
+                        else
+                            ((SwipeLayout) book.getParent()).setVisibility(View.GONE);
+                    }
+                }
+
+                if (countResults == 0){
+                    root.findViewById(R.id.no_books_view).setVisibility(View.VISIBLE);
+                }
+                else {
+                    root.findViewById(R.id.no_books_view).setVisibility(View.GONE);
+                }
+                return false;
+            }
+        });
+
+        Button btnAddBook = root.findViewById(R.id.button_add_book);
+        btnAddBook.setOnClickListener(v -> {
+            NewBook popUpClass = new NewBook();
+            Object[] popups = popUpClass.showPopupWindow(v);
+
+            View popupView = (View) popups[0];
+            PopupWindow popupWindow = (PopupWindow) popups[1];
+
+            EditText inputTitle = popupView.findViewById(R.id.input_title);
+            EditText inputSubtitle = popupView.findViewById(R.id.input_subtitle);
+            EditText inputPrice = popupView.findViewById(R.id.input_price);
+
+            Button buttonAdd = popupView.findViewById(R.id.add_book_button);
+            buttonAdd.setOnClickListener(v1 -> {
+                if (inputTitle.getText().toString().length() != 0 &&
+                        inputSubtitle.getText().toString().length() != 0 &&
+                        inputPrice.getText().toString().length() != 0) {
+
+                    addNewBook(new Book(inputTitle.getText().toString(),
+                                    inputSubtitle.getText().toString(),
+                                    inputPrice.getText().toString(), "", ""));
+                    orientChange();
+
+                    popupWindow.dismiss();
+                }
+                else{
+                    Toast.makeText(getActivity(), "Incorrect data!",
+                            Toast.LENGTH_LONG).show();
+                }
+            });
+        });
 
         return root;
     }
@@ -129,11 +233,44 @@ public class BooksListFragment extends Fragment {
         return result;
     }
 
+    private void binClicked(SwipeLayout swipeLayout, ConstraintLayout key){
+        arrBook.remove(arrConstraint.indexOf(key));
+        arrConstraint.remove(key);
+        mainLayout.removeView(swipeLayout);
+    }
+
     private void addNewBook(Book newBook){
+        SwipeLayout swipeLay = new SwipeLayout(root.getContext());
+        swipeLay.setShowMode(SwipeLayout.ShowMode.PullOut);
+        swipeLay.setLayoutParams(
+                new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT, Gravity.RIGHT));
+        mainLayout.addView(swipeLay);
+
+        ImageButton deleteButton = new ImageButton(root.getContext());
+        deleteButton.setImageResource(R.drawable.ic_delete_forever_white_48dp);
+        deleteButton.setBackgroundColor(Color.RED);
+        deleteButton.setPadding(50, 0, 50, 0);
+        LinearLayout.LayoutParams btnBinParams =
+                new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT);
+        btnBinParams.gravity = Gravity.RIGHT;
+        swipeLay.setShowMode(SwipeLayout.ShowMode.PullOut);
+        //swipeLay.addDrag(SwipeLayout.DragEdge.Right, deleteButton);
+        swipeLay.addView(deleteButton, 0, btnBinParams);
+
         ConstraintLayout bookShelf = new ConstraintLayout(root.getContext());
         bookShelf.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.WRAP_CONTENT));
-        mainLayout.addView(bookShelf);
+        swipeLay.addView(bookShelf, 1);
+
+        deleteButton.setOnClickListener(v -> binClicked(swipeLay, bookShelf));
+        bookShelf.setOnClickListener(v -> {
+            if (newBook.bookIsbn13.length() != 0 && !newBook.bookIsbn13.equals("noid")) {
+                BookFull popUpClass = new BookFull();
+                popUpClass.showPopupWindow(v, newBook);
+            }
+        });
 
         ImageView bookPic = new ImageView(root.getContext());
         if (newBook.bookImagePath.length() != 0)
