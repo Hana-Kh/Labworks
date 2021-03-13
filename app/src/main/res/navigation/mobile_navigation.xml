@@ -22,4 +22,10 @@
         android:name="ua.kpi.comsys.io8225.labworks.ui.books_list.BooksListFragment"
         android:label="@string/title_books_list"
         tools:layout="@layout/fragment_bookslist" />
+
+    <fragment
+        android:id="@+id/navigation_gallery"
+        android:name="ua.kpi.comsys.io8225.labworks.ui.gallery.GalleryFragment"
+        android:label="@string/title_gallery"
+        tools:layout="@layout/fragment_gallery" />
 </navigation>

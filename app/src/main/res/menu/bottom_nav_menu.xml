@@ -16,4 +16,9 @@
         android:icon="@drawable/ic_local_library_black_48dp"
         android:title="@string/title_books_list" />
 
+    <item
+        android:id="@+id/navigation_gallery"
+        android:icon="@drawable/ic_camera_enhance_black_48dp"
+        android:title="@string/title_gallery" />
+
 </menu>
