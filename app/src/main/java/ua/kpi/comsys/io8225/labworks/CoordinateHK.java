@@ -53,6 +53,12 @@ public class CoordinateHK {
             System.err.println("Incorrect second "+second);
             throw new ArithmeticException();
         }
+
+        if ((Math.abs(degree) + (float)minute/60 + (float)second/3600 > 90 && direction == Direction.LATITUDE) ||
+                (Math.abs(degree) + (float)minute/60 + (float)second/3600 > 180 && direction == Direction.LONGITUDE)) {
+            System.err.println("Incorrect coordinate");
+            throw new ArithmeticException();
+        }
     }
 
     public String getWorldPart(int degree, Direction direction){
@@ -85,11 +91,20 @@ public class CoordinateHK {
         return String.format("%f° %s", floatCoord * koef, getWorldPart(degree, direction));
     }
 
-    public CoordinateHK getMiddle(CoordinateHK a, CoordinateHK b) {
+    public static CoordinateHK getMiddle(CoordinateHK a, CoordinateHK b) {
         if (a.direction == b.direction){
+            int akoef, bkoef;
+            if (a.degree >= 0)
+                akoef = 1;
+            else
+                akoef = -1;
+            if (b.degree >= 0)
+                bkoef = 1;
+            else
+                bkoef = -1;
             int midDegree = (a.degree + b.degree) / 2;
-            int midMinute = (a.minute + b.minute) / 2;
-            int midSecond = (a.second + b.second) / 2;
+            int midMinute = Math.abs(akoef * a.minute + bkoef * b.minute) / 2;
+            int midSecond = Math.abs(akoef * a.second + bkoef * b.second) / 2;
             return new CoordinateHK(midDegree, midMinute, midSecond, a.direction);
         }
         else {
