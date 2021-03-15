@@ -4,6 +4,8 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.res.Configuration;
 import android.graphics.Color;
+import android.os.AsyncTask;
+import android.os.Build;
 import android.os.Bundle;
 import android.text.TextUtils;
 import android.util.DisplayMetrics;
@@ -17,14 +19,17 @@ import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.PopupWindow;
+import android.widget.ProgressBar;
 import android.widget.SearchView;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.RawRes;
+import androidx.annotation.RequiresApi;
 import androidx.constraintlayout.widget.ConstraintLayout;
 import androidx.constraintlayout.widget.ConstraintSet;
+import androidx.core.content.ContextCompat;
 import androidx.fragment.app.Fragment;
 
 import com.daimajia.swipe.SwipeLayout;
@@ -34,97 +39,79 @@ import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
 
+import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.lang.reflect.Field;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.net.URLConnection;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Set;
 
 import ua.kpi.comsys.io8225.labworks.R;
+import ua.kpi.comsys.io8225.labworks.ui.gallery.GalleryFragment;
 
 public class BooksListFragment extends Fragment {
 
-    LinearLayout mainLayout;
-    View root;
-    ArrayList<ConstraintLayout> arrConstraint;
-    ArrayList<Book> arrBook;
+    static LinearLayout mainLayout;
+    static View root;
+    static TextView noBooks;
+    static ProgressBar loadingBar;
+    static HashMap<ConstraintLayout, Book> booksMap;
+    static Set<ConstraintLayout> removeSet;
 
     public View onCreateView(@NonNull LayoutInflater inflater,
                              ViewGroup container, Bundle savedInstanceState) {
         root = inflater.inflate(R.layout.fragment_bookslist, container, false);
+        setRetainInstance(true);
 
         mainLayout = root.findViewById(R.id.linear_main);
 
-        arrConstraint = new ArrayList<>();
-        arrBook = new ArrayList<>();
-
-        try {
-            for (Book book:
-                    parseBooks(readTextFile(root.getContext(), R.raw.bookslist))) {
-                addNewBook(book);
-            }
-        } catch (ParseException e) {
-            e.printStackTrace();
-        }
-
         SearchView searchView = root.findViewById(R.id.search_view);
+        loadingBar = root.findViewById(R.id.no_items_progressbar);
+        noBooks = root.findViewById(R.id.no_books_view);
+
+        booksMap = new HashMap<>();
+        removeSet = new HashSet<>();
 
         searchView.setOnQueryTextListener(new SearchView.OnQueryTextListener() {
             @Override
-            public boolean onQueryTextSubmit(String query) {
-                int countResults = 0;
-                for (ConstraintLayout book :
-                        arrConstraint) {
-                    if (query == null){
-                        ((SwipeLayout) book.getParent()).setVisibility(View.VISIBLE);
-                        countResults++;
-                    }
-                    else {
-                        if (arrBook.get(arrConstraint.indexOf(book)).bookTitle.toLowerCase()
-                                .contains(query.toLowerCase()) || query.length() == 0){
-                            ((SwipeLayout) book.getParent()).setVisibility(View.VISIBLE);
-                            countResults++;
-                        }
-                        else
-                            ((SwipeLayout) book.getParent()).setVisibility(View.GONE);
-                    }
-                }
-
-                if (countResults == 0){
-                    root.findViewById(R.id.no_books_view).setVisibility(View.VISIBLE);
+            public boolean onQueryTextSubmit(String newText) {
+                removeSet.addAll(booksMap.keySet());
+                if (newText.length() >= 3) {
+                    AsyncLoadBooks aTask = new AsyncLoadBooks();
+                    loadingBar.setVisibility(View.VISIBLE);
+                    noBooks.setVisibility(View.GONE);
+                    aTask.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR, newText);
                 }
                 else {
-                    root.findViewById(R.id.no_books_view).setVisibility(View.GONE);
+                    for (ConstraintLayout constraintLayout : removeSet) {
+                        binClicked(constraintLayout);
+                    }
+                    removeSet.clear();
                 }
                 return false;
             }
 
             @Override
-            public boolean onQueryTextChange(String query) {
-                int countResults = 0;
-                for (ConstraintLayout book :
-                        arrConstraint) {
-                    if (query == null){
-                        ((SwipeLayout) book.getParent()).setVisibility(View.VISIBLE);
-                        countResults++;
-                    }
-                    else {
-                        if (arrBook.get(arrConstraint.indexOf(book)).bookTitle.toLowerCase()
-                                .contains(query.toLowerCase()) || query.length() == 0){
-                            ((SwipeLayout) book.getParent()).setVisibility(View.VISIBLE);
-                            countResults++;
-                        }
-                        else
-                            ((SwipeLayout) book.getParent()).setVisibility(View.GONE);
-                    }
-                }
-
-                if (countResults == 0){
-                    root.findViewById(R.id.no_books_view).setVisibility(View.VISIBLE);
+            public boolean onQueryTextChange(String newText) {
+                removeSet.addAll(booksMap.keySet());
+                if (newText.length() >= 3) {
+                    AsyncLoadBooks aTask = new AsyncLoadBooks();
+                    loadingBar.setVisibility(View.VISIBLE);
+                    noBooks.setVisibility(View.GONE);
+                    aTask.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR, newText);
                 }
                 else {
-                    root.findViewById(R.id.no_books_view).setVisibility(View.GONE);
+                    for (ConstraintLayout constraintLayout : removeSet) {
+                        binClicked(constraintLayout);
+                    }
+                    removeSet.clear();
                 }
                 return false;
             }
@@ -149,8 +136,10 @@ public class BooksListFragment extends Fragment {
                         inputPrice.getText().toString().length() != 0) {
 
                     addNewBook(new Book(inputTitle.getText().toString(),
-                                    inputSubtitle.getText().toString(),
-                                    inputPrice.getText().toString(), "", ""));
+                                        inputSubtitle.getText().toString(),
+                                        inputPrice.getText().toString(), "", ""));
+                    orientChange();
+                    noBooks.setVisibility(View.GONE);
                     orientChange();
 
                     popupWindow.dismiss();
@@ -163,6 +152,29 @@ public class BooksListFragment extends Fragment {
         });
 
         return root;
+    }
+
+    protected static void loadBooks(ArrayList<Book> books){
+        if (books != null) {
+            for (ConstraintLayout constraintLayout : removeSet) {
+                binClicked(constraintLayout);
+            }
+            removeSet.clear();
+            if (books.size() > 0) {
+                noBooks.setVisibility(View.GONE);
+                for (Book book :
+                        books) {
+                    addNewBook(book);
+                }
+            } else {
+                noBooks.setVisibility(View.VISIBLE);
+            }
+        }
+        else {
+            Toast.makeText(root.getContext(), "Cannot load data!", Toast.LENGTH_LONG).show();
+            noBooks.setVisibility(View.VISIBLE);
+        }
+        loadingBar.setVisibility(View.GONE);
     }
 
     @Override
@@ -178,68 +190,20 @@ public class BooksListFragment extends Fragment {
         int width = displayMetrics.widthPixels;
 
         for (ConstraintLayout bookshelf :
-                arrConstraint) {
+                booksMap.keySet()) {
             bookshelf.getChildAt(0).setLayoutParams(
                     new ConstraintLayout.LayoutParams(width/3, width/3));
         }
     }
 
-    public static String readTextFile(Context context, @RawRes int id){
-        InputStream inputStream = context.getResources().openRawResource(id);
-        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-
-        byte[] buffer = new byte[1024];
-        int size;
-        try {
-            while ((size = inputStream.read(buffer)) != -1) {
-                outputStream.write(buffer, 0, size);
-            }
-            outputStream.close();
-            inputStream.close();
-        } catch (IOException e) {
-            System.err.println("FIle cannot be reading!");
-            e.printStackTrace();
-        }
-        return outputStream.toString();
+    private static void binClicked(ConstraintLayout key){
+        booksMap.remove(key);
+        mainLayout.removeView((SwipeLayout) key.getParent());
+        if (booksMap.keySet().isEmpty())
+            noBooks.setVisibility(View.VISIBLE);
     }
 
-    public static int getResId(String resName, Class<?> c) {
-        try {
-            Field idField = c.getDeclaredField(resName);
-            return idField.getInt(idField);
-        } catch (Exception e) {
-            e.printStackTrace();
-            return -1;
-        }
-    }
-
-    private ArrayList<Book> parseBooks(String jsonText) throws ParseException {
-        ArrayList<Book> result = new ArrayList<>();
-
-        JSONObject jsonObject = (JSONObject) new JSONParser().parse(jsonText);
-
-        JSONArray books = (JSONArray) jsonObject.get("books");
-        for (Object book: books) {
-            JSONObject tmp = (JSONObject) book;
-            result.add(new Book(
-                    (String) tmp.get("title"),
-                    (String) tmp.get("subtitle"),
-                    (String) tmp.get("isbn13"),
-                    (String) tmp.get("price"),
-                    (String) tmp.get("image")
-            ));
-        }
-
-        return result;
-    }
-
-    private void binClicked(SwipeLayout swipeLayout, ConstraintLayout key){
-        arrBook.remove(arrConstraint.indexOf(key));
-        arrConstraint.remove(key);
-        mainLayout.removeView(swipeLayout);
-    }
-
-    private void addNewBook(Book newBook){
+    private static void addNewBook(Book newBook){
         SwipeLayout swipeLay = new SwipeLayout(root.getContext());
         swipeLay.setShowMode(SwipeLayout.ShowMode.PullOut);
         swipeLay.setLayoutParams(
@@ -264,7 +228,7 @@ public class BooksListFragment extends Fragment {
                         ViewGroup.LayoutParams.WRAP_CONTENT));
         swipeLay.addView(bookShelf, 1);
 
-        deleteButton.setOnClickListener(v -> binClicked(swipeLay, bookShelf));
+        deleteButton.setOnClickListener(v -> binClicked(bookShelf));
         bookShelf.setOnClickListener(v -> {
             if (newBook.bookIsbn13.length() != 0 && !newBook.bookIsbn13.equals("noid")) {
                 BookFull popUpClass = new BookFull();
@@ -272,12 +236,21 @@ public class BooksListFragment extends Fragment {
             }
         });
 
+        ProgressBar loadingImageBar = new ProgressBar(root.getContext());
+        loadingImageBar.getIndeterminateDrawable().setColorFilter(
+                ContextCompat.getColor(root.getContext(), R.color.purple_500),
+                android.graphics.PorterDuff.Mode.MULTIPLY);
+        loadingImageBar.setVisibility(View.GONE);
+        loadingImageBar.setId(loadingImageBar.hashCode());
+        bookShelf.addView(loadingImageBar);
+
         ImageView bookPic = new ImageView(root.getContext());
-        if (newBook.bookImagePath.length() != 0)
-            bookPic.setImageResource(
-                    getResId(newBook.bookImagePath.toLowerCase()
-                            .split("\\.")[0], R.drawable.class));
         bookPic.setId(bookPic.hashCode());
+        if (newBook.bookImagePath.length() != 0){
+            bookPic.setVisibility(View.INVISIBLE);
+            loadingImageBar.setVisibility(View.VISIBLE);
+            new GalleryFragment.DownloadImageTask(bookPic, loadingImageBar, root.getContext()).execute(newBook.bookImagePath);
+        }
         ConstraintLayout.LayoutParams imgParams = new ConstraintLayout.LayoutParams(300, 300);
         bookShelf.addView(bookPic, imgParams);
 
@@ -355,9 +328,86 @@ public class BooksListFragment extends Fragment {
         bookLayTmpSet.setMargin(textPrice.getId(), ConstraintSet.START, 8);
         bookLayTmpSet.setMargin(textPrice.getId(), ConstraintSet.END, 8);
 
+        bookLayTmpSet.connect(loadingImageBar.getId(), ConstraintSet.START,
+                bookPic.getId(), ConstraintSet.START);
+        bookLayTmpSet.connect(loadingImageBar.getId(), ConstraintSet.TOP,
+                bookPic.getId(), ConstraintSet.TOP);
+        bookLayTmpSet.connect(loadingImageBar.getId(), ConstraintSet.END,
+                bookPic.getId(), ConstraintSet.END);
+        bookLayTmpSet.connect(loadingImageBar.getId(), ConstraintSet.BOTTOM,
+                bookPic.getId(), ConstraintSet.BOTTOM);
+
         bookLayTmpSet.applyTo(bookShelf);
 
-        arrConstraint.add(bookShelf);
-        arrBook.add(newBook);
+        booksMap.put(bookShelf, newBook);
+    }
+
+    private static class AsyncLoadBooks extends AsyncTask<String, Void, ArrayList<Book>> {
+        private String getRequest(String url){
+            StringBuilder result = new StringBuilder();
+            try {
+                URL getReq = new URL(url);
+                URLConnection bookConnection = getReq.openConnection();
+                BufferedReader in = new BufferedReader(new InputStreamReader(bookConnection.getInputStream()));
+                String inputLine;
+
+                while ((inputLine = in.readLine()) != null)
+                    result.append(inputLine).append("\n");
+
+                in.close();
+
+            } catch (MalformedURLException e) {
+                System.err.println(String.format("Incorrect URL <%s>!", url));
+                e.printStackTrace();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+
+            return result.toString();
+        }
+
+        private ArrayList<Book> parseBooks(String jsonText) throws ParseException {
+            ArrayList<Book> result = new ArrayList<>();
+
+            JSONObject jsonObject = (JSONObject) new JSONParser().parse(jsonText);
+
+            JSONArray books = (JSONArray) jsonObject.get("books");
+            for (Object book : books) {
+                JSONObject tmp = (JSONObject) book;
+                result.add(new Book(
+                        (String) tmp.get("title"),
+                        (String) tmp.get("subtitle"),
+                        (String) tmp.get("isbn13"),
+                        (String) tmp.get("price"),
+                        (String) tmp.get("image")
+                ));
+            }
+            return result;
+        }
+        @RequiresApi(api = Build.VERSION_CODES.M)
+        private ArrayList<Book> search(String newText){
+            String jsonResponse = String.format("https://api.itbook.store/1.0/search/\"%s\"", newText);
+            try {
+                ArrayList<Book> books = parseBooks(getRequest(jsonResponse));
+                return books;
+            } catch (ParseException e) {
+                System.err.println("Incorrect content of JSON file!");
+                e.printStackTrace();
+            }
+            return null;
+        }
+
+        @RequiresApi(api = Build.VERSION_CODES.M)
+        @Override
+        protected ArrayList<Book> doInBackground(String... strings) {
+            return search(strings[0]);
+        }
+
+        @RequiresApi(api = Build.VERSION_CODES.M)
+        @Override
+        protected void onPostExecute(ArrayList<Book> books) {
+            super.onPostExecute(books);
+            loadBooks(books);
+        }
     }
 }
