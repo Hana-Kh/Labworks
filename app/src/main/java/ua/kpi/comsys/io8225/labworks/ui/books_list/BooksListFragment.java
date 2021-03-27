@@ -1,14 +1,16 @@
 package ua.kpi.comsys.io8225.labworks.ui.books_list;
 
 import android.app.Activity;
-import android.content.Context;
 import android.content.res.Configuration;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Bundle;
 import android.text.TextUtils;
 import android.util.DisplayMetrics;
+import android.util.Log;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -25,7 +27,6 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.RawRes;
 import androidx.annotation.RequiresApi;
 import androidx.constraintlayout.widget.ConstraintLayout;
 import androidx.constraintlayout.widget.ConstraintSet;
@@ -40,20 +41,23 @@ import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
 
 import java.io.BufferedReader;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.lang.reflect.Field;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLConnection;
+import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Set;
 
 import ua.kpi.comsys.io8225.labworks.R;
+import ua.kpi.comsys.io8225.labworks.ui.db.App;
+import ua.kpi.comsys.io8225.labworks.ui.db.AppDatabase;
+import ua.kpi.comsys.io8225.labworks.ui.db.BooksEntity;
+import ua.kpi.comsys.io8225.labworks.ui.db.SearchEntity;
 import ua.kpi.comsys.io8225.labworks.ui.gallery.GalleryFragment;
 
 public class BooksListFragment extends Fragment {
@@ -64,6 +68,7 @@ public class BooksListFragment extends Fragment {
     static ProgressBar loadingBar;
     static HashMap<ConstraintLayout, Book> booksMap;
     static Set<ConstraintLayout> removeSet;
+    private static AppDatabase database;
 
     public View onCreateView(@NonNull LayoutInflater inflater,
                              ViewGroup container, Bundle savedInstanceState) {
@@ -150,6 +155,8 @@ public class BooksListFragment extends Fragment {
                 }
             });
         });
+
+        database = App.getInstance().getDatabase();
 
         return root;
     }
@@ -246,10 +253,18 @@ public class BooksListFragment extends Fragment {
 
         ImageView bookPic = new ImageView(root.getContext());
         bookPic.setId(bookPic.hashCode());
-        if (newBook.bookImagePath.length() != 0){
+        if (newBook.bookImagePath != null) {
+            if (newBook.bookImagePath.length() != 0) {
+                bookPic.setVisibility(View.INVISIBLE);
+                loadingImageBar.setVisibility(View.VISIBLE);
+                new GalleryFragment.DownloadImageTask(bookPic, loadingImageBar, root.getContext()).execute(newBook.bookImagePath);
+            }
+        }else {
             bookPic.setVisibility(View.INVISIBLE);
             loadingImageBar.setVisibility(View.VISIBLE);
-            new GalleryFragment.DownloadImageTask(bookPic, loadingImageBar, root.getContext()).execute(newBook.bookImagePath);
+            bookPic.setImageBitmap(newBook.bookImage);
+            loadingImageBar.setVisibility(View.GONE);
+            bookPic.setVisibility(View.VISIBLE);
         }
         ConstraintLayout.LayoutParams imgParams = new ConstraintLayout.LayoutParams(300, 300);
         bookShelf.addView(bookPic, imgParams);
@@ -342,26 +357,52 @@ public class BooksListFragment extends Fragment {
         booksMap.put(bookShelf, newBook);
     }
 
-    private static class AsyncLoadBooks extends AsyncTask<String, Void, ArrayList<Book>> {
-        private String getRequest(String url){
-            StringBuilder result = new StringBuilder();
+    private static class AsyncLoadBookToDB extends AsyncTask<Book, Void, Void> {
+        @Override
+        protected Void doInBackground(Book... books) {
+            BooksEntity booksEntity = new BooksEntity(Long.parseLong(books[0].bookIsbn13),
+                    books[0].bookTitle,
+                    books[0].bookSubtitle,
+                    books[0].bookPrice,
+                    "", "", 0, "", "", 0);
+            String urldisplay = books[0].bookImagePath;
+            Bitmap mIcon11 = null;
             try {
-                URL getReq = new URL(url);
-                URLConnection bookConnection = getReq.openConnection();
-                BufferedReader in = new BufferedReader(new InputStreamReader(bookConnection.getInputStream()));
-                String inputLine;
-
-                while ((inputLine = in.readLine()) != null)
-                    result.append(inputLine).append("\n");
-
-                in.close();
-
-            } catch (MalformedURLException e) {
-                System.err.println(String.format("Incorrect URL <%s>!", url));
-                e.printStackTrace();
-            } catch (IOException e) {
+                InputStream in = new java.net.URL(urldisplay).openStream();
+                mIcon11 = BitmapFactory.decodeStream(in);
+            } catch (Exception e) {
+                Log.e("Error", e.getMessage());
                 e.printStackTrace();
             }
+            if (mIcon11 != null) {
+                booksEntity.setImage(mIcon11);
+
+                database.bookDao().insert(booksEntity);
+                SearchEntity search = database.searchTableDao().getLastSearch();
+                ArrayList<Long> booksIsbn = new ArrayList<>(search.searchedBooks);
+                booksIsbn.add(booksEntity.getIsbn13());
+                search.searchedBooks = booksIsbn;
+
+                database.searchTableDao().update(search);
+            }
+            return null;
+        }
+    }
+
+    private static class AsyncLoadBooks extends AsyncTask<String, Void, ArrayList<Book>> {
+
+        private String getRequest(String url) throws IOException{
+            StringBuilder result = new StringBuilder();
+
+            URL getReq = new URL(url);
+            URLConnection bookConnection = getReq.openConnection();
+            BufferedReader in = new BufferedReader(new InputStreamReader(bookConnection.getInputStream()));
+            String inputLine;
+
+            while ((inputLine = in.readLine()) != null)
+                result.append(inputLine).append("\n");
+
+            in.close();
 
             return result.toString();
         }
@@ -384,12 +425,45 @@ public class BooksListFragment extends Fragment {
             }
             return result;
         }
+
+        private ArrayList<Book> offlineLoad(String query){
+            ArrayList<Book> newBooks = new ArrayList<>();
+            ArrayList<Long> isbns = database.searchTableDao().getLastByQuery(query).searchedBooks;
+            for (long isbn :
+                    isbns) {
+                newBooks.add(database.bookDao().getByIsbn13(isbn).makeBook());
+            }
+            return newBooks;
+        }
+
         @RequiresApi(api = Build.VERSION_CODES.M)
         private ArrayList<Book> search(String newText){
             String jsonResponse = String.format("https://api.itbook.store/1.0/search/\"%s\"", newText);
             try {
                 ArrayList<Book> books = parseBooks(getRequest(jsonResponse));
+
+                SearchEntity newSearch = new SearchEntity();
+                newSearch.searchQueue = newText;
+                newSearch.searchedBooks = new ArrayList<>();
+                database.searchTableDao().insert(newSearch);
+
+                for (Book book :
+                        books) {
+                    new AsyncLoadBookToDB().execute(book);
+                }
                 return books;
+            } catch (UnknownHostException e) {
+
+                System.err.println("Request timeout!");
+                if (database.searchTableDao().getLastByQuery(newText) != null) {
+                    return offlineLoad(newText);
+                }
+
+            } catch (MalformedURLException e) {
+                System.err.println(String.format("Incorrect URL <%s>!", jsonResponse));
+                e.printStackTrace();
+            } catch (IOException e) {
+                e.printStackTrace();
             } catch (ParseException e) {
                 System.err.println("Incorrect content of JSON file!");
                 e.printStackTrace();
@@ -400,13 +474,16 @@ public class BooksListFragment extends Fragment {
         @RequiresApi(api = Build.VERSION_CODES.M)
         @Override
         protected ArrayList<Book> doInBackground(String... strings) {
-            return search(strings[0]);
+            String searchQueue = strings[0];
+            return search(searchQueue);
         }
 
         @RequiresApi(api = Build.VERSION_CODES.M)
         @Override
         protected void onPostExecute(ArrayList<Book> books) {
             super.onPostExecute(books);
+            if (books == null)
+                Toast.makeText(root.getContext(), "Cannot load data!", Toast.LENGTH_SHORT).show();
             loadBooks(books);
         }
     }

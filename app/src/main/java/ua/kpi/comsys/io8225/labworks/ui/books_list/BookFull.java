@@ -28,8 +28,11 @@ import java.lang.reflect.Field;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLConnection;
+import java.net.UnknownHostException;
 
 import ua.kpi.comsys.io8225.labworks.R;
+import ua.kpi.comsys.io8225.labworks.ui.db.App;
+import ua.kpi.comsys.io8225.labworks.ui.db.AppDatabase;
 import ua.kpi.comsys.io8225.labworks.ui.gallery.GalleryFragment;
 
 public class BookFull {
@@ -37,6 +40,7 @@ public class BookFull {
     private static ProgressBar loadingImage;
     private static ImageView bookImage;
     private static Book book;
+    private static AppDatabase database;
 
     public void showPopupWindow(final View view, Book book) {
         view.getContext();
@@ -55,11 +59,25 @@ public class BookFull {
         final PopupWindow popupWindow = new PopupWindow(popupView, width, height, focusable);
         popupWindow.showAtLocation(view, Gravity.CENTER, 0, 0);
 
+        database = App.getInstance().getDatabase();
+
         AsyncLoadBookInfo aTask = new AsyncLoadBookInfo();
         aTask.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR, BookFull.book.bookIsbn13);
     }
 
     protected static void setInfoData(){
+        if (book.bookImagePath != null) {
+            bookImage.setVisibility(View.INVISIBLE);
+            loadingImage.setVisibility(View.VISIBLE);
+            new GalleryFragment.DownloadImageTask(bookImage, loadingImage, popupView.getContext()).execute(book.bookImagePath);
+        }
+        else {
+            bookImage.setVisibility(View.INVISIBLE);
+            loadingImage.setVisibility(View.VISIBLE);
+            bookImage.setImageBitmap(book.bookImage);
+            loadingImage.setVisibility(View.GONE);
+            bookImage.setVisibility(View.VISIBLE);
+        }
         bookImage.setVisibility(View.INVISIBLE);
         loadingImage.setVisibility(View.VISIBLE);
         new GalleryFragment.DownloadImageTask(bookImage, loadingImage, popupView.getContext()).execute(book.bookImagePath);
@@ -74,26 +92,32 @@ public class BookFull {
         ((TextView) popupView.findViewById(R.id.book_info_year)).setText(book.bookYear);
     }
 
+    public static class AsyncLoadBookInfoToDB extends AsyncTask<Book, Void, Void> {
+        @Override
+        protected Void doInBackground(Book... books) {
+            database.bookDao().setInfoByIsbn13(Long.parseLong(books[0].bookIsbn13),
+                    books[0].bookAuthors,
+                    books[0].bookDescription,
+                    Long.parseLong(books[0].bookPages),
+                    books[0].bookPublisher,
+                    books[0].bookRating,
+                    Long.parseLong(books[0].bookYear));
+            return null;
+        }
+    }
+
     private static class AsyncLoadBookInfo extends AsyncTask<String, Void, Void> {
-        private String getRequest(String url){
+        private String getRequest(String url) throws IOException{
             StringBuilder result = new StringBuilder();
-            try {
-                URL getReq = new URL(url);
-                URLConnection bookConnection = getReq.openConnection();
-                BufferedReader in = new BufferedReader(new InputStreamReader(bookConnection.getInputStream()));
-                String inputLine;
+            URL getReq = new URL(url);
+            URLConnection bookConnection = getReq.openConnection();
+            BufferedReader in = new BufferedReader(new InputStreamReader(bookConnection.getInputStream()));
+            String inputLine;
 
-                while ((inputLine = in.readLine()) != null)
-                    result.append(inputLine).append("\n");
+            while ((inputLine = in.readLine()) != null)
+                result.append(inputLine).append("\n");
 
-                in.close();
-
-            } catch (MalformedURLException e) {
-                System.err.println(String.format("Incorrect URL <%s>!", url));
-                e.printStackTrace();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
+            in.close();
             return result.toString();
         }
 
@@ -107,16 +131,35 @@ public class BookFull {
             book.bookYear = (String) jsonObject.get("year");
         }
 
+        private void fromDB(long isbn){
+            book = database.bookDao().getByIsbn13(isbn).makeBookInfo();
+        }
+
+        private void toDb(){
+            new AsyncLoadBookInfoToDB().execute(book);
+        }
+
         @RequiresApi(api = Build.VERSION_CODES.M)
         private void search(String isbn13) {
             String jsonResponse = String.format("https://api.itbook.store/1.0/books/%s", isbn13);
             try {
-                parseBookInfo(getRequest(jsonResponse));
+                String req = getRequest(jsonResponse);
+                parseBookInfo(req);
+                toDb();
+            } catch (MalformedURLException e) {
+                System.err.println(String.format("Incorrect URL <%s>!", jsonResponse));
+                e.printStackTrace();
+            } catch (UnknownHostException e) {
+                System.err.println("Request timeout!");
+                fromDB(Long.parseLong(isbn13));
+            } catch (IOException e) {
+                e.printStackTrace();
             } catch (ParseException e) {
                 System.err.println("Incorrect content of JSON file!");
                 e.printStackTrace();
             }
         }
+
         @RequiresApi(api = Build.VERSION_CODES.M)
         @Override
         protected Void doInBackground(String... strings) {

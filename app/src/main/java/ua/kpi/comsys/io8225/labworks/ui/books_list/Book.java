@@ -1,11 +1,14 @@
 package ua.kpi.comsys.io8225.labworks.ui.books_list;
 
+import android.graphics.Bitmap;
+
 public class Book {
     public String bookTitle;
     public String bookSubtitle;
     public String bookIsbn13;
     public String bookPrice;
     public String bookImagePath;
+    public Bitmap bookImage;
 
     public String bookDescription;
     public String bookAuthors;
@@ -20,6 +23,14 @@ public class Book {
         bookIsbn13 = price;
         bookPrice = isbn13;
         bookImagePath = imagePath;
+    }
+
+    public Book(String title, String subtitle, String isbn13, String price, Bitmap image){
+        bookTitle = title;
+        bookSubtitle = subtitle;
+        bookIsbn13 = isbn13;
+        bookPrice = price;
+        bookImage = image;
     }
 
     public Book(String title, String subtitle, String price, String isbn13, String imagePath,
