@@ -20,12 +20,12 @@ public class Book {
     public Book(String title, String subtitle, String price, String isbn13, String imagePath) {
         bookTitle = title;
         bookSubtitle = subtitle;
-        bookIsbn13 = price;
-        bookPrice = isbn13;
+        bookIsbn13 = isbn13;
+        bookPrice = price;
         bookImagePath = imagePath;
     }
 
-    public Book(String title, String subtitle, String isbn13, String price, Bitmap image){
+    public Book(String title, String subtitle, String price, String isbn13, Bitmap image){
         bookTitle = title;
         bookSubtitle = subtitle;
         bookIsbn13 = isbn13;
@@ -37,8 +37,8 @@ public class Book {
                 String description, String authors, String publisher, String pages, String year, String rating) {
         bookTitle = title;
         bookSubtitle = subtitle;
-        bookIsbn13 = price;
-        bookPrice = isbn13;
+        bookIsbn13 = isbn13;
+        bookPrice = price;
         bookImagePath = imagePath;
         bookDescription = description;
         bookAuthors = authors;

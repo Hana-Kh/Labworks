@@ -143,7 +143,7 @@ public class BooksListFragment extends Fragment {
                     addNewBook(new Book(inputTitle.getText().toString(),
                                         inputSubtitle.getText().toString(),
                                         inputPrice.getText().toString(), "", ""));
-                    orientChange();
+
                     noBooks.setVisibility(View.GONE);
                     orientChange();
 
@@ -418,8 +418,8 @@ public class BooksListFragment extends Fragment {
                 result.add(new Book(
                         (String) tmp.get("title"),
                         (String) tmp.get("subtitle"),
-                        (String) tmp.get("isbn13"),
                         (String) tmp.get("price"),
+                        (String) tmp.get("isbn13"),
                         (String) tmp.get("image")
                 ));
             }
